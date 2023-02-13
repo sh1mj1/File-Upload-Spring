@@ -307,3 +307,162 @@ parts=[org.apache.catalina.core.ApplicationPart@6103e1a2, org.apache.catalina.co
 스프링이 제공하는 기본 멀티파트 리졸버는 `MultipartHttpServletRequest` 인터페이스를 구현한 `StandardMultipartHttpServletRequest` 을 반환합니다.
 
 이제 컨트롤러에서 `HttpServletRequest` 대신에 `MultipartHttpServletRequest` 을 주입받을 수 있는데, 이것을 사용하면 멀티파트와 관련된 여러가지 처리를 편리하게 할 수 있습니다. 그런데 이후 강의에서 설명할 `MultipartFile` 이라는 것을 사용하는 것이 더 편하기 때문에 `MultipartHttpServletRequest` 을 잘 사용하지는 않습니다. 더 자세한 내용은 `MultipartResolver` 을 검색해 봅시다.
+
+
+# 3. 서블릿과 파일 업로드 2
+
+서블릿이 제공하는 `Part` 에 대해서 알아보고 실제 파일도 서버에 업로드해 봅시다.
+
+먼저 파일을 업로드하려면 실제 파일이 저장되는 경로가 필요합니다.
+
+해당 경로에 실제 폴더를 만들어 둡시다. 그리고 다음에 만들어진 경로를 입력해 둡시다.
+
+`application.properties`
+
+```html
+file.dir=파일 업로드 경로 설정(예): /Users/javaSpring/uploadStudy
+```
+
+주의
+
+꼭 해당 경로에 실제 폴더를 미리 만들어 둡시다.
+
+[`application.properties`](http://application.properties) 에서 설정할 때 마지막에 `‘/’`(슬래시)가 포함된 것에 주의합시다.
+
+`ServletUploadControllerV2`
+
+```java
+package hello.upload.controller;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Controller;
+import org.springframework.util.StreamUtils;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.Part;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+
+@Slf4j
+@Controller
+@RequestMapping("/servlet/v2")
+public class ServletUploadControllerV2 {
+
+    @Value("${file.dir}")
+    private String fileDir;
+
+    @GetMapping("/upload")
+    public String newFile() {
+        return "upload-form";
+    }
+
+    @PostMapping("/upload")
+    public String saveFileV1(HttpServletRequest request) throws ServletException, IOException {
+        log.info("request={}", request);
+        String itemName = request.getParameter("itemName");
+        log.info("itemName={}", itemName);
+        Collection<Part> parts = request.getParts();
+        log.info("parts={}", parts);
+
+        for (Part part : parts) {
+            log.info("==== PART ====");
+            log.info("name={}", part.getName());
+            Collection<String> headerNames = part.getHeaderNames();
+            for (String headerName : headerNames) {
+                log.info("header {}: {}", headerName,
+                        part.getHeader(headerName));
+            }
+            //편의 메서드
+            //content-disposition; filename
+            log.info("submittedFileName={}", part.getSubmittedFileName());
+            log.info("size={}", part.getSize()); //part body size
+            //데이터 읽기
+            InputStream inputStream = part.getInputStream();
+            String body = StreamUtils.copyToString(inputStream, StandardCharsets.UTF_8);
+            log.info("body={}", body);
+            //파일에 저장하기
+            if (StringUtils.hasText(part.getSubmittedFileName())) {
+                String fullPath = fileDir + part.getSubmittedFileName();
+                log.info("파일 저장 fullPath={}", fullPath);
+                part.write(fullPath);
+            }
+        }
+        return "upload-form";
+    }
+
+}
+```
+
+```java
+@Value("${file.dir}")
+private String fileDir;
+```
+
+[`application.properties`](http://application.properties) 에서 설정한 file.dir 의 값을 주입합니다.
+
+멀티파트 형식은 전송 데이터를 하나하나 각각 `Part` 로 나누어 전송합니다. `parts` 에는 이렇게 나누어진 데이터가 각각 담깁니다.
+
+서블릿이 제공하는 `Part` 는 멀티파트 형식을 편리하게 읽을 수 있는 다양한 메서드를 제공합니다.
+
+### Part 주요 메서드
+
+`part.getSubmittedFileName():` 클라이언트가 전달한 파일명
+
+`part.getInputStream()`: `Part` 의 전송 데이터를 읽을 수 있다.
+
+`part.write(…)`: `Part` 를 통해 전송된 데이터를 저장할 수 있습니다.
+
+실행
+
+`http://localhost:8080/servlet/v2/upload`
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/44451795-e45b-4a2b-b6a3-1900e839279e/Untitled.png)
+
+다음 내용을 전송했습니다.
+
+`itemName`: itemC
+
+`file`: Untitled.png
+
+결과 로그
+
+```java
+==== PART ====
+name=itemName
+header content-disposition: form-data; name="itemName"
+submittedFileName=null
+size=5
+body=itemC
+==== PART ====
+name=file
+header content-disposition: form-data; name="file"; filename="Untitled.png"
+header content-type: image/png
+submittedFileName=Untitled.png
+size=1007476
+body=�PNG
+파일 저장 fullPath=/Users/simjihun/javaSpringPdf/uploadStudy/Untitled.png
+```
+
+파일 저장 경로에 가보면 실제 파일이 저장된 것을 확인할 수 있습니다. 
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/d75b324f-4967-459c-b38b-b89be4cd3934/Untitled.png)
+
+참고 - 큰 용량의 파일 업로드를 테스트할 때는 로그가 너무 많이 남아서 다음 옵션을 끄는 것이 좋습니다.
+
+`logging.level.org.apache.coyote.http11=debug`
+
+다음 부분도 파일의 바이너리 데이터를 모두 출력하므로 끄는 것이 좋습니다.
+
+`log.info(”body={}”, body);`
+
+서블릿이 제공하는 `Part` 는 편하기는 하지만, `HttpServletRequest` 을 사용해야 하고, 추가로 파일 부분만 구분하려면 여러가지 코드를 넣어야 합니다.
+
+그렇다면 다음 글에서 스프링이 이 부분을 얼마나 편리하게 제공하는지를 확인해봅시다.
